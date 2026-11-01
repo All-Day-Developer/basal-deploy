@@ -1,0 +1,76 @@
+registry: ghcr.io
+namespace: ""
+
+precompile:
+  runner: [self-hosted, linux, x64, gpu]
+  timeout_minutes: 60
+
+defaults:
+  revision: main
+  extra_args: []
+  variants: [slim, weights]
+  platforms: [linux/amd64]
+  runner: ubuntu-latest
+  enabled: true
+
+runtimes:
+  vllm:
+    base_image: vllm/vllm-openai:v0.11.0
+    port: 8000
+    precompile: true
+  llamacpp:
+    base_image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    port: 8080
+    precompile: false
+
+images:
+  - name: basal-2.0-mini
+    model: Remek/basal-2.0-mini
+    runtime: vllm
+  - name: basal-2.0-4.5b
+    model: Remek/basal-2.0-4.5B
+    runtime: vllm
+  - name: basal-2.0-max
+    model: Remek/basal-2.0-max
+    runtime: vllm
+
+  - name: basal-2.0-mini-fp8
+    model: Remek/basal-2.0-mini-FP8
+    runtime: vllm
+  - name: basal-2.0-4.5b-fp8
+    model: Remek/basal-2.0-4.5B-FP8
+    runtime: vllm
+  - name: basal-2.0-max-fp8
+    model: Remek/basal-2.0-max-FP8
+    runtime: vllm
+
+  - name: basal-2.0-mini-gguf
+    model: Remek/basal-2.0-mini-GGUF
+    runtime: llamacpp
+    gguf_file: basal-2.0-mini-Q5_K_M.gguf
+  - name: basal-2.0-4.5b-gguf
+    model: Remek/basal-2.0-4.5B-GGUF
+    runtime: llamacpp
+    gguf_file: basal-2.0-4.5B-Q5_K_M.gguf
+  - name: basal-2.0-max-gguf
+    model: Remek/basal-2.0-max-GGUF
+    runtime: llamacpp
+    gguf_file: basal-2.0-max-Q5_K_M.gguf
+
+  - name: basal-omni-1.1-max
+    model: Remek/basal-omni-1.1-max
+    runtime: vllm
+    extra_args: [--trust-remote-code]
+
+  - name: basal-2.0-mini-mlx-8bit
+    model: Remek/basal-2.0-mini-MLX-8bit
+    runtime: vllm
+    enabled: false
+  - name: basal-2.0-4.5b-mlx-8bit
+    model: Remek/basal-2.0-4.5B-MLX-8bit
+    runtime: vllm
+    enabled: false
+  - name: basal-2.0-max-mlx-8bit
+    model: Remek/basal-2.0-max-MLX-8bit
+    runtime: vllm
+    enabled: false
