@@ -6,7 +6,7 @@ from typing import Any
 
 import yaml
 
-VARIANTS = ("slim", "weights")
+VARIANTS = ("online", "offline")
 
 Runner = str | list[str]
 
@@ -18,15 +18,9 @@ class ConfigError(ValueError):
 @dataclass(frozen=True)
 class Runtime:
     name: str
+    image: str
     base_image: str
     port: int
-    precompile: bool = False
-
-
-@dataclass(frozen=True)
-class Precompile:
-    runner: Runner
-    timeout_minutes: int = 60
 
 
 @dataclass(frozen=True)
@@ -40,20 +34,15 @@ class Image:
     variants: list[str] = field(default_factory=lambda: list(VARIANTS))
     platforms: list[str] = field(default_factory=lambda: ["linux/amd64"])
     runner: Runner = "ubuntu-latest"
-    precompile: bool | None = None
     enabled: bool = True
-
-    @property
-    def should_precompile(self) -> bool:
-        return self.runtime.precompile if self.precompile is None else self.precompile
 
 
 @dataclass(frozen=True)
 class Config:
     registry: str
     namespace: str
+    runtimes: dict[str, Runtime]
     images: list[Image]
-    precompile: Precompile | None = None
 
     def get(self, name: str) -> Image:
         for image in self.images:
@@ -67,23 +56,23 @@ def load(path: str | Path = "images.yaml") -> Config:
     if not isinstance(raw, dict):
         raise ConfigError(f"{path}: top level must be a mapping")
 
-    runtimes = {
-        key: Runtime(
-            name=key,
-            base_image=val["base_image"],
-            port=int(val["port"]),
-            precompile=bool(val.get("precompile", False)),
-        )
-        for key, val in (raw.get("runtimes") or {}).items()
-    }
+    runtimes: dict[str, Runtime] = {}
+    for key, val in (raw.get("runtimes") or {}).items():
+        try:
+            runtimes[key] = Runtime(
+                name=key,
+                image=val.get("image", f"basal-{key}"),
+                base_image=val["base_image"],
+                port=int(val["port"]),
+            )
+        except KeyError as exc:
+            raise ConfigError(f"runtime {key}: missing {exc}") from exc
     defaults: dict[str, Any] = raw.get("defaults") or {}
 
-    precompile = None
-    if raw.get("precompile"):
-        precompile = Precompile(**raw["precompile"])
-
     images: list[Image] = []
-    seen: set[str] = set()
+    seen: set[str] = {r.image for r in runtimes.values()}
+    if len(seen) != len(runtimes):
+        raise ConfigError("runtime image names must be unique")
     for entry in raw.get("images") or []:
         merged = {**defaults, **entry}
         name = merged.get("name")
@@ -105,18 +94,13 @@ def load(path: str | Path = "images.yaml") -> Config:
             raise ConfigError(f"{name}: llamacpp images need a `gguf_file`")
 
         try:
-            image = Image(runtime=runtime, **merged)
+            images.append(Image(runtime=runtime, **merged))
         except TypeError as exc:
             raise ConfigError(f"{name}: {exc}") from exc
-        if image.should_precompile and runtime.name != "vllm":
-            raise ConfigError(f"{name}: precompile is only supported for vllm")
-        if image.enabled and image.should_precompile and precompile is None:
-            raise ConfigError(f"{name}: precompile requested but no `precompile.runner` set")
-        images.append(image)
 
     return Config(
         registry=raw.get("registry", "ghcr.io"),
         namespace=raw.get("namespace") or "",
+        runtimes=runtimes,
         images=images,
-        precompile=precompile,
     )

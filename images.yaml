@@ -1,27 +1,23 @@
 registry: ghcr.io
 namespace: ""
 
-precompile:
-  runner: [self-hosted, linux, x64, gpu]
-  timeout_minutes: 60
-
 defaults:
   revision: main
   extra_args: []
-  variants: [slim, weights]
+  variants: [online, offline]
   platforms: [linux/amd64]
   runner: ubuntu-latest
   enabled: true
 
 runtimes:
   vllm:
+    image: basal-vllm
     base_image: vllm/vllm-openai:v0.11.0
     port: 8000
-    precompile: true
   llamacpp:
+    image: basal-llamacpp
     base_image: ghcr.io/ggml-org/llama.cpp:server-cuda
     port: 8080
-    precompile: false
 
 images:
   - name: basal-2.0-mini
