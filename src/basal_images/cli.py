@@ -179,7 +179,9 @@ def plan(extra: list[str]) -> Plan:
         *shlex.split(env.get("LLAMA_ARGS", "")),
     ]  # fmt: skip
     serve[serve.index("--model") + 1] = str(folder)
-    return Plan(serve=serve + ["--llamacpp-url", llama_url] + serve_args, llama=llama, llama_url=llama_url)
+    return Plan(
+        serve=serve + ["--llamacpp-url", llama_url] + serve_args, llama=llama, llama_url=llama_url
+    )
 
 
 def _wait_healthy(proc: subprocess.Popen, url: str, timeout: float) -> bool:
@@ -211,7 +213,9 @@ def _supervise(p: Plan) -> int:
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
 
-    if not _wait_healthy(llama, f"{p.llama_url}/health", float(os.environ.get("LLAMA_TIMEOUT", 900))):
+    if not _wait_healthy(
+        llama, f"{p.llama_url}/health", float(os.environ.get("LLAMA_TIMEOUT", 900))
+    ):
         print("llama-server did not become healthy", file=sys.stderr)
         stop(signal.SIGTERM, None)
         llama.wait()
@@ -239,6 +243,7 @@ def cmd_serve(extra: list[str]) -> int:
     if p.llama is None:
         print("exec:", shlex.join(p.serve), flush=True)
         os.execv(p.serve[0], p.serve)
+        return 0
     return _supervise(p)
 
 
