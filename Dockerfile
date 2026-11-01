@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.10
 ARG UV_VERSION=0.9.28
 ARG PYTHON_VERSION=3.12
-ARG VLLM_IMAGE=vllm/vllm-openai:v0.11.0
+ARG ENGINE_IMAGE=debian:bookworm-slim
 ARG LLAMACPP_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda
 ARG VARIANT=online
 
@@ -21,19 +21,25 @@ ENV UV_PYTHON_INSTALL_DIR=/opt/python \
 WORKDIR /src
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv python install ${PYTHON_VERSION}
-RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    --mount=type=bind,source=uv.lock,target=uv.lock \
-    uv sync --locked --no-dev --no-install-project --python ${PYTHON_VERSION}
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-editable --python ${PYTHON_VERSION}
 
-FROM builder AS models-online
+FROM builder AS venv-tools
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-dev --no-editable
+
+FROM builder AS venv-engine
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-dev --no-editable --extra engine
+
+FROM builder AS venv-llamacpp
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-dev --no-editable --extra llamacpp
+
+FROM venv-tools AS models-online
 RUN mkdir -p /models/model
 
-FROM builder AS models-offline
+FROM venv-tools AS models-offline
 ARG MODEL
 ARG REVISION=main
 ARG GGUF_FILE=""
@@ -45,43 +51,61 @@ RUN --mount=type=secret,id=hf_token,env=HF_TOKEN \
 
 FROM models-${VARIANT} AS models
 
-FROM ${VLLM_IMAGE} AS vllm-runner
-COPY --from=builder /opt/python /opt/python
-COPY --from=builder /opt/basal/venv /opt/basal/venv
-RUN mkdir -p /models/model /models/cache /opt/vllm-cache
-ENV BASAL_RUNTIME=vllm \
+FROM ${ENGINE_IMAGE} AS engine-runner
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates gcc g++ libc6-dev \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=venv-engine /opt/python /opt/python
+COPY --from=venv-engine /opt/basal/venv /opt/basal/venv
+RUN mkdir -p /models/model /models/cache /opt/compile-cache
+ENV PATH=/opt/basal/venv/bin:${PATH} \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility \
     BASAL_PORT=8000 \
     HF_HOME=/models/cache/hf \
-    VLLM_CACHE_ROOT=/opt/vllm-cache \
-    TRITON_CACHE_DIR=/opt/vllm-cache/triton
+    TORCHINDUCTOR_CACHE_DIR=/opt/compile-cache/inductor \
+    TRITON_CACHE_DIR=/opt/compile-cache/triton
 EXPOSE 8000
 ENTRYPOINT ["/opt/basal/venv/bin/basal-images", "serve"]
 CMD []
 
-FROM vllm-runner AS vllm
+FROM engine-runner AS engine
 ARG MODEL
-ARG EXTRA_ARGS=""
+ARG MODE
+ARG REVISION=main
+ARG SERVE_ARGS=""
 COPY --from=models /models/model /models/model
 ENV BASAL_MODEL="${MODEL}" \
-    BASAL_EXTRA_ARGS="${EXTRA_ARGS}"
+    BASAL_MODE="${MODE}" \
+    BASAL_REVISION="${REVISION}" \
+    BASAL_SERVE_ARGS="${SERVE_ARGS}"
 
 FROM ${LLAMACPP_IMAGE} AS llamacpp-runner
-COPY --from=builder /opt/python /opt/python
-COPY --from=builder /opt/basal/venv /opt/basal/venv
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=venv-llamacpp /opt/python /opt/python
+COPY --from=venv-llamacpp /opt/basal/venv /opt/basal/venv
 RUN mkdir -p /models/model /models/cache
-ENV BASAL_RUNTIME=llamacpp \
-    BASAL_PORT=8080 \
+ENV PATH=/opt/basal/venv/bin:${PATH} \
+    BASAL_MODE=llamacpp \
+    BASAL_PORT=8000 \
+    HF_HOME=/models/cache/hf \
     LLAMA_SERVER=/app/llama-server \
-    LLAMA_CACHE=/models/cache/llama.cpp
-EXPOSE 8080
+    LLAMA_PORT=8081
+EXPOSE 8000
 ENTRYPOINT ["/opt/basal/venv/bin/basal-images", "serve"]
 CMD []
 
 FROM llamacpp-runner AS llamacpp
 ARG MODEL
-ARG GGUF_FILE=""
-ARG EXTRA_ARGS=""
+ARG REVISION=main
+ARG GGUF_FILE
+ARG CONTEXT=8192
+ARG SERVE_ARGS=""
 COPY --from=models /models/model /models/model
 ENV BASAL_MODEL="${MODEL}" \
+    BASAL_REVISION="${REVISION}" \
     BASAL_GGUF_FILE="${GGUF_FILE}" \
-    BASAL_EXTRA_ARGS="${EXTRA_ARGS}"
+    BASAL_CONTEXT="${CONTEXT}" \
+    BASAL_SERVE_ARGS="${SERVE_ARGS}"
