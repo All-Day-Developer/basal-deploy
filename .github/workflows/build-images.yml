@@ -113,7 +113,11 @@ jobs:
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
           sudo docker image prune -af
-          df -h /
+          sudo systemctl stop docker
+          sudo mkdir -p /mnt/docker
+          echo '{"data-root":"/mnt/docker"}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl start docker
+          df -h / /mnt
 
       - uses: actions/checkout@v5
 
@@ -142,17 +146,17 @@ jobs:
       - uses: docker/build-push-action@v7
         with:
           context: .
-          target: ${{ matrix.runtime }}-runner
+          target: ${{ matrix.target }}
           platforms: ${{ matrix.platforms }}
           push: ${{ env.PUSH == 'true' }}
           tags: ${{ steps.tags.outputs.tags }}
           build-args: |
-            VLLM_IMAGE=${{ matrix.base_image }}
+            ENGINE_IMAGE=${{ matrix.base_image }}
             LLAMACPP_IMAGE=${{ matrix.base_image }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.description=basal ${{ matrix.runtime }} runner (bring your own model)
+            org.opencontainers.image.description=basal-serve ${{ matrix.runtime }} runner (bring your own model)
           cache-from: type=gha,scope=runner-${{ matrix.runtime }}
           cache-to: type=gha,mode=max,scope=runner-${{ matrix.runtime }}
 
@@ -215,22 +219,24 @@ jobs:
       - uses: docker/build-push-action@v7
         with:
           context: .
-          target: ${{ matrix.runtime }}
+          target: ${{ matrix.target }}
           platforms: ${{ matrix.platforms }}
           push: ${{ env.PUSH == 'true' }}
           tags: ${{ steps.tags.outputs.tags }}
           build-args: |
-            VLLM_IMAGE=${{ matrix.base_image }}
+            ENGINE_IMAGE=${{ matrix.base_image }}
             LLAMACPP_IMAGE=${{ matrix.base_image }}
             VARIANT=${{ matrix.variant }}
             MODEL=${{ matrix.model }}
+            MODE=${{ matrix.mode }}
             REVISION=${{ matrix.revision }}
             GGUF_FILE=${{ matrix.gguf_file }}
-            EXTRA_ARGS=${{ matrix.extra_args }}
+            CONTEXT=${{ matrix.context }}
+            SERVE_ARGS=${{ matrix.serve_args }}
           secrets: |
             hf_token=${{ secrets.HF_TOKEN }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.description=${{ matrix.model }} (${{ matrix.runtime }}, ${{ matrix.variant }})
+            org.opencontainers.image.description=${{ matrix.model }} (basal-serve --mode ${{ matrix.mode }}, ${{ matrix.variant }})
           cache-from: type=gha,scope=runner-${{ matrix.runtime }}
