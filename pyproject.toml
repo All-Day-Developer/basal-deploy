@@ -1,12 +1,23 @@
 [project]
 name = "basal-images"
-version = "0.1.0"
-description = "Build config, weight downloader and server launcher for basal model container images"
+version = "0.2.0"
+description = "Build config, weight downloader and basal-serve launcher for basal model container images"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "huggingface-hub>=0.34",
     "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+engine = [
+    "basal[fp8,media]",
+    "torch==2.11.0",
+    "torchvision",
+]
+llamacpp = [
+    "basal",
+    "torch==2.11.0",
 ]
 
 [project.scripts]
@@ -21,6 +32,28 @@ dev = [
 [build-system]
 requires = ["uv_build>=0.9,<0.10"]
 build-backend = "uv_build"
+
+[tool.uv]
+conflicts = [[{ extra = "engine" }, { extra = "llamacpp" }]]
+environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
+
+[tool.uv.sources]
+basal = { url = "https://github.com/rkinas/basal/archive/refs/tags/v2.4.1.tar.gz" }
+torch = [
+    { index = "pytorch-cu128", extra = "engine" },
+    { index = "pytorch-cpu", extra = "llamacpp" },
+]
+torchvision = [{ index = "pytorch-cu128", extra = "engine" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.ruff]
 line-length = 100

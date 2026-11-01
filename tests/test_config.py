@@ -114,6 +114,21 @@ def test_serve_online_llamacpp(monkeypatch, tmp_path):
     assert "--hf-repo" in argv and "basal-2.0-mini-Q5_K_M.gguf" in argv
 
 
+def test_serve_passes_dash_args_through(monkeypatch, tmp_path):
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    (model_dir / "config.json").write_text("{}")
+    monkeypatch.setattr(cli, "MODEL_DIR", model_dir)
+    monkeypatch.setenv("BASAL_RUNTIME", "vllm")
+    monkeypatch.setenv("BASAL_MODEL", "Remek/basal-2.0-max-FP8")
+    monkeypatch.setenv("BASAL_PORT", "8000")
+    monkeypatch.setenv("BASAL_EXTRA_ARGS", "--max-model-len 16384")
+    captured = {}
+    monkeypatch.setattr(cli.os, "execvp", lambda f, a: captured.setdefault("argv", a))
+    assert cli.main(["serve", "--gpu-memory-utilization", "0.8"]) == 0
+    assert captured["argv"][-4:] == ["--max-model-len", "16384", "--gpu-memory-utilization", "0.8"]
+
+
 def test_runner_without_model_fails(monkeypatch, tmp_path):
     monkeypatch.setattr(cli, "MODEL_DIR", tmp_path / "missing")
     monkeypatch.setenv("BASAL_RUNTIME", "vllm")

@@ -3,70 +3,90 @@ namespace: ""
 
 defaults:
   revision: main
-  extra_args: []
+  serve_args: []
   variants: [online, offline]
   platforms: [linux/amd64]
-  runner: ubuntu-latest
+  runner: ubuntu-24.04
   enabled: true
 
 runtimes:
-  vllm:
-    image: basal-vllm
-    base_image: vllm/vllm-openai:v0.11.0
+  engine:
+    image: basal-engine
+    base_image: debian:bookworm-slim
+    extra: engine
     port: 8000
   llamacpp:
-    image: basal-llamacpp
+    image: basal-engine-llamacpp
     base_image: ghcr.io/ggml-org/llama.cpp:server-cuda
-    port: 8080
+    extra: llamacpp
+    port: 8000
 
 images:
   - name: basal-2.0-mini
     model: Remek/basal-2.0-mini
-    runtime: vllm
+    runtime: engine
+    mode: fast
   - name: basal-2.0-4.5b
     model: Remek/basal-2.0-4.5B
-    runtime: vllm
+    runtime: engine
+    mode: fast
+    serve_args: [--template-prefix, "off"]
   - name: basal-2.0-max
     model: Remek/basal-2.0-max
-    runtime: vllm
+    runtime: engine
+    mode: fast
 
   - name: basal-2.0-mini-fp8
     model: Remek/basal-2.0-mini-FP8
-    runtime: vllm
+    runtime: engine
+    mode: fp8
   - name: basal-2.0-4.5b-fp8
     model: Remek/basal-2.0-4.5B-FP8
-    runtime: vllm
+    runtime: engine
+    mode: fp8
+    serve_args: [--template-prefix, "off"]
   - name: basal-2.0-max-fp8
     model: Remek/basal-2.0-max-FP8
-    runtime: vllm
+    runtime: engine
+    mode: fp8
 
   - name: basal-2.0-mini-gguf
     model: Remek/basal-2.0-mini-GGUF
     runtime: llamacpp
-    gguf_file: basal-2.0-mini-Q5_K_M.gguf
+    mode: llamacpp
+    gguf_file: basal-2.0-mini-Q8_0.gguf
+    context: 8192
   - name: basal-2.0-4.5b-gguf
     model: Remek/basal-2.0-4.5B-GGUF
     runtime: llamacpp
-    gguf_file: basal-2.0-4.5B-Q5_K_M.gguf
+    mode: llamacpp
+    gguf_file: basal-2.0-4.5B-Q8_0.gguf
+    context: 32768
   - name: basal-2.0-max-gguf
     model: Remek/basal-2.0-max-GGUF
     runtime: llamacpp
-    gguf_file: basal-2.0-max-Q5_K_M.gguf
+    mode: llamacpp
+    gguf_file: basal-2.0-max-Q8_0.gguf
+    context: 32768
 
   - name: basal-omni-1.1-max
     model: Remek/basal-omni-1.1-max
-    runtime: vllm
-    extra_args: [--trust-remote-code]
+    runtime: engine
+    mode: eager
+    serve_args: [--media, "on"]
 
   - name: basal-2.0-mini-mlx-8bit
     model: Remek/basal-2.0-mini-MLX-8bit
-    runtime: vllm
+    runtime: engine
+    mode: mlx
     enabled: false
   - name: basal-2.0-4.5b-mlx-8bit
     model: Remek/basal-2.0-4.5B-MLX-8bit
-    runtime: vllm
+    runtime: engine
+    mode: mlx
     enabled: false
   - name: basal-2.0-max-mlx-8bit
     model: Remek/basal-2.0-max-MLX-8bit
-    runtime: vllm
+    runtime: engine
+    mode: mlx
     enabled: false
