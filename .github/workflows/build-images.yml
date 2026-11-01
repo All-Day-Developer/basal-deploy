@@ -109,10 +109,9 @@ jobs:
     env:
       IMAGE: ${{ needs.plan.outputs.registry }}/${{ needs.plan.outputs.namespace }}/${{ matrix.name }}
     steps:
-      - name: Free disk space
+      - name: Move Docker to /mnt
+        if: runner.environment == 'github-hosted'
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
-          sudo docker image prune -af
           sudo systemctl stop docker
           sudo mkdir -p /mnt/docker
           echo '{"data-root":"/mnt/docker"}' | sudo tee /etc/docker/daemon.json
@@ -176,11 +175,9 @@ jobs:
     env:
       IMAGE: ${{ needs.plan.outputs.registry }}/${{ needs.plan.outputs.namespace }}/${{ matrix.name }}
     steps:
-      - name: Free disk space
+      - name: Move Docker to /mnt
         if: runner.environment == 'github-hosted'
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
-          sudo docker image prune -af
           sudo systemctl stop docker
           sudo mkdir -p /mnt/docker
           echo '{"data-root":"/mnt/docker"}' | sudo tee /etc/docker/daemon.json
