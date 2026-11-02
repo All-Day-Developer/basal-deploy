@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import sys
 from collections.abc import Mapping
+from types import ModuleType
 
 KNOBS = ("BASAL_TOKEN_BUDGET", "BASAL_GRAPH_LEN", "BASAL_TREE_ROWS")
 
@@ -38,18 +39,32 @@ def tune(cls: type, env: Mapping[str, str]) -> None:
         cls.TREE_ROWS = _cap(list(cls.TREE_ROWS), rows)
 
 
+def load_fp8_on_host(engine: ModuleType) -> None:
+    original = engine.load_modelopt_fp8
+
+    def load(model_dir, device="cuda", dtype=None, **kwargs):
+        if str(device) == "cpu":
+            return original(model_dir, device, dtype, **kwargs)
+        return original(model_dir, "cpu", dtype, **kwargs).to(device)
+
+    engine.load_modelopt_fp8 = load
+
+
 def main() -> None:
-    from basal.engine import GraphBackend
+    import basal.engine as engine
     from basal.server import main as serve
 
-    tune(GraphBackend, os.environ)
-    print(
-        "graphs:",
-        f"token budget {GraphBackend.TOKEN_BUDGET},",
-        f"longest {GraphBackend.PLAIN_LENS[-1]},",
-        f"tree rows {GraphBackend.TREE_ROWS[-1]}",
-        flush=True,
-    )
+    load_fp8_on_host(engine)
+    if wanted(os.environ):
+        tune(engine.GraphBackend, os.environ)
+        graphs = engine.GraphBackend
+        print(
+            "graphs:",
+            f"token budget {graphs.TOKEN_BUDGET},",
+            f"longest {graphs.PLAIN_LENS[-1]},",
+            f"tree rows {graphs.TREE_ROWS[-1]}",
+            flush=True,
+        )
     sys.argv[0] = "basal-serve"
     serve()
 

@@ -3,7 +3,6 @@ ARG UV_VERSION=0.9.28
 ARG PYTHON_VERSION=3.12
 ARG ENGINE_IMAGE=debian:bookworm-slim
 ARG LLAMACPP_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda
-ARG VARIANT=online
 
 FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
 
@@ -36,10 +35,7 @@ FROM builder AS venv-llamacpp
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --no-editable --extra llamacpp
 
-FROM venv-tools AS models-online
-RUN mkdir -p /models/model
-
-FROM venv-tools AS models-offline
+FROM venv-tools AS models
 ARG MODEL
 ARG REVISION=main
 ARG GGUF_FILE=""
@@ -48,8 +44,6 @@ RUN --mount=type=secret,id=hf_token,env=HF_TOKEN \
     HF_HUB_DISABLE_PROGRESS_BARS=1 \
     /opt/basal/venv/bin/basal-images download \
       --model "${MODEL}" --revision "${REVISION}" --gguf-file "${GGUF_FILE}" --dest /models/model
-
-FROM models-${VARIANT} AS models
 
 FROM ${ENGINE_IMAGE} AS engine-runner
 RUN apt-get update \
@@ -74,11 +68,13 @@ ARG MODEL
 ARG MODE
 ARG REVISION=main
 ARG SERVE_ARGS=""
-COPY --from=models /models/model /models/model
 ENV BASAL_MODEL="${MODEL}" \
     BASAL_MODE="${MODE}" \
     BASAL_REVISION="${REVISION}" \
     BASAL_SERVE_ARGS="${SERVE_ARGS}"
+
+FROM engine AS engine-offline
+COPY --from=models /models/model /models/model
 
 FROM ${LLAMACPP_IMAGE} AS llamacpp-runner
 RUN apt-get update \
@@ -103,9 +99,11 @@ ARG REVISION=main
 ARG GGUF_FILE
 ARG CONTEXT=8192
 ARG SERVE_ARGS=""
-COPY --from=models /models/model /models/model
 ENV BASAL_MODEL="${MODEL}" \
     BASAL_REVISION="${REVISION}" \
     BASAL_GGUF_FILE="${GGUF_FILE}" \
     BASAL_CONTEXT="${CONTEXT}" \
     BASAL_SERVE_ARGS="${SERVE_ARGS}"
+
+FROM llamacpp AS llamacpp-offline
+COPY --from=models /models/model /models/model

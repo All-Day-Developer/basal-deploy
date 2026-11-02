@@ -223,7 +223,6 @@ jobs:
           build-args: |
             ENGINE_IMAGE=${{ matrix.base_image }}
             LLAMACPP_IMAGE=${{ matrix.base_image }}
-            VARIANT=online
             MODEL=${{ matrix.model }}
             MODE=${{ matrix.mode }}
             REVISION=${{ matrix.revision }}
@@ -241,14 +240,13 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          target: ${{ matrix.target }}
+          target: ${{ matrix.target }}-offline
           platforms: ${{ matrix.platforms }}
           push: ${{ env.PUSH == 'true' }}
           tags: ${{ steps.tags.outputs.offline }}
           build-args: |
             ENGINE_IMAGE=${{ matrix.base_image }}
             LLAMACPP_IMAGE=${{ matrix.base_image }}
-            VARIANT=offline
             MODEL=${{ matrix.model }}
             MODE=${{ matrix.mode }}
             REVISION=${{ matrix.revision }}

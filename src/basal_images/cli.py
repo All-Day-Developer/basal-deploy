@@ -14,7 +14,7 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import config, launch
+from . import config
 
 MODEL_DIR = Path("/models/model")
 
@@ -242,9 +242,7 @@ def cmd_serve(extra: list[str]) -> int:
         os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
     p = plan(extra)
     if p.llama is None:
-        argv = p.serve
-        if launch.wanted(os.environ):
-            argv = [sys.executable, "-m", "basal_images.launch", *p.serve[1:]]
+        argv = [sys.executable, "-m", "basal_images.launch", *p.serve[1:]]
         print("exec:", shlex.join(argv), flush=True)
         os.execv(argv[0], argv)
         return 0

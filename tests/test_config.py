@@ -193,10 +193,9 @@ def test_runner_without_model_or_mode_fails(env):
         cli.plan([])
 
 
-def test_serve_uses_launcher_when_graphs_are_tuned(env):
+def test_serve_goes_through_launcher(env):
     env.setenv("BASAL_MODEL", "Remek/basal-2.0-max-FP8")
     env.setenv("BASAL_MODE", "fp8")
-    env.setenv("BASAL_TOKEN_BUDGET", "4096")
     captured = {}
     env.setattr(cli.os, "execv", lambda f, a: captured.setdefault("argv", a))
     cli.main(["serve"])
@@ -225,3 +224,18 @@ def test_tune_knob_validation():
     assert not launch.wanted({"BASAL_TOKEN_BUDGET": " "})
     with pytest.raises(SystemExit, match="positive"):
         launch.tune(Graphs, {"BASAL_TREE_ROWS": "0"})
+
+
+def test_fp8_checkpoint_is_assembled_on_host():
+    calls = []
+
+    class Model:
+        def to(self, device):
+            calls.append(("to", device))
+            return self
+
+    engine = type("engine", (), {})()
+    engine.load_modelopt_fp8 = lambda d, device, dtype: calls.append((d, device)) or Model()
+    launch.load_fp8_on_host(engine)
+    engine.load_modelopt_fp8("/models/model", "cuda", "bf16")
+    assert calls == [("/models/model", "cpu"), ("to", "cuda")]
