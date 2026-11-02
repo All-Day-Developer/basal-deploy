@@ -160,7 +160,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=runner-${{ matrix.runtime }}
 
   build:
-    needs: [plan, runner]
+    needs: plan
     if: needs.plan.outputs.image_count != '0'
     name: ${{ matrix.name }} (${{ matrix.variants }})
     runs-on: ${{ fromJSON(matrix.runner) }}
