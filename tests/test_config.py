@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from basal_images import cli, config
+from basal_images import cli, config, launch
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = str(ROOT / "images.yaml")
@@ -37,17 +37,21 @@ def test_modes_match_weights():
             assert not image.enabled, image.name
 
 
-def test_matrix_skips_disabled_and_expands_variants(capsys):
+def test_matrix_has_one_row_per_image_with_all_variants(capsys):
     images = _plan(capsys)["images"]["include"]
     assert not any("mlx" in row["name"] for row in images)
-    variants = {row["variant"] for row in images if row["name"] == "basal-2.0-mini"}
-    assert variants == {"online", "offline"}
+    names = [row["name"] for row in images]
+    assert len(names) == len(set(names))
+    mini = next(row for row in images if row["name"] == "basal-2.0-mini")
+    assert mini["variants"] == "online,offline"
+    assert mini["online"] is True and mini["offline"] is True
 
 
 def test_matrix_only_and_variant_filters(capsys):
     plan = _plan(capsys, "--only", "basal-2.0-mini-gguf", "--variant", "offline")
     images = plan["images"]["include"]
-    assert [(r["name"], r["variant"]) for r in images] == [("basal-2.0-mini-gguf", "offline")]
+    assert [(r["name"], r["variants"]) for r in images] == [("basal-2.0-mini-gguf", "offline")]
+    assert images[0]["online"] is False and images[0]["offline"] is True
     assert images[0]["gguf_file"] == "basal-2.0-mini-Q8_0.gguf"
     assert images[0]["target"] == "llamacpp"
     assert [r["target"] for r in plan["runners"]["include"]] == ["llamacpp-runner"]
@@ -105,7 +109,14 @@ def test_invalid_configs(tmp_path, body, match):
 @pytest.fixture
 def env(monkeypatch, tmp_path):
     monkeypatch.setattr(cli, "MODEL_DIR", tmp_path / "model")
-    for key in ("BASAL_MODEL", "BASAL_MODE", "BASAL_GGUF_FILE", "BASAL_SERVE_ARGS", "PORT"):
+    for key in (
+        "BASAL_MODEL",
+        "BASAL_MODE",
+        "BASAL_GGUF_FILE",
+        "BASAL_SERVE_ARGS",
+        "PORT",
+        *launch.KNOBS,
+    ):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("BASAL_PORT", "8000")
     return monkeypatch
@@ -180,3 +191,37 @@ def test_runner_without_model_or_mode_fails(env):
     env.setenv("BASAL_MODEL", "x")
     with pytest.raises(SystemExit, match="BASAL_MODE"):
         cli.plan([])
+
+
+def test_serve_uses_launcher_when_graphs_are_tuned(env):
+    env.setenv("BASAL_MODEL", "Remek/basal-2.0-max-FP8")
+    env.setenv("BASAL_MODE", "fp8")
+    env.setenv("BASAL_TOKEN_BUDGET", "4096")
+    captured = {}
+    env.setattr(cli.os, "execv", lambda f, a: captured.setdefault("argv", a))
+    cli.main(["serve"])
+    assert captured["argv"][1:3] == ["-m", "basal_images.launch"]
+    assert captured["argv"][3:5] == ["--model", "Remek/basal-2.0-max-FP8"]
+
+
+class Graphs:
+    LENS = [128, 256, 1024, 3072]
+    PLAIN_LENS = [128, 256, 1024, 3072, 4096, 8192]
+    TREE_ROWS = [1, 2, 4, 8]
+    TOKEN_BUDGET = 12288
+
+
+def test_tune_caps_graph_grid():
+    env = {"BASAL_TOKEN_BUDGET": "4096", "BASAL_GRAPH_LEN": "2048", "BASAL_TREE_ROWS": "2"}
+    assert launch.wanted(env)
+    launch.tune(Graphs, env)
+    assert Graphs.TOKEN_BUDGET == 4096
+    assert Graphs.PLAIN_LENS == [128, 256, 1024]
+    assert Graphs.LENS == [128, 256, 1024]
+    assert Graphs.TREE_ROWS == [1, 2]
+
+
+def test_tune_knob_validation():
+    assert not launch.wanted({"BASAL_TOKEN_BUDGET": " "})
+    with pytest.raises(SystemExit, match="positive"):
+        launch.tune(Graphs, {"BASAL_TREE_ROWS": "0"})

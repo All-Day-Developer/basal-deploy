@@ -34,6 +34,15 @@ The first start of `fast` / `fp8` compiles the model and captures CUDA graphs (s
 `basal-compile` volume keeps the compile cache for later starts. Online images also want
 `-v basal-hf:/models/cache` so weights are downloaded once.
 
+On 24 GB cards the `max` models run out of memory while capturing graphs with the engine defaults; a smaller
+graph grid fits (about 3.5 GB less for the key/value buffer, and smaller activations):
+
+```bash
+docker run --gpus all -p 8000:8000 -v basal-compile:/opt/compile-cache \
+  -e BASAL_TOKEN_BUDGET=4096 -e BASAL_GRAPH_LEN=4096 -e BASAL_TREE_ROWS=2 \
+  ghcr.io/all-day-developer/basal-2.0-max-fp8:offline
+```
+
 Arguments after the image name go to `basal-serve`:
 
 ```bash
@@ -76,6 +85,9 @@ curl -s localhost:8000/v1/systemone -H 'content-type: application/json' -d '{
 | `BASAL_SERVE_ARGS` | extra `basal-serve` flags |
 | `BASAL_GGUF_FILE`, `BASAL_CONTEXT` | llama.cpp images: GGUF file and `llama-server -c` |
 | `N_GPU_LAYERS`, `LLAMA_ARGS` | llama.cpp images: `-ngl` and extra `llama-server` flags |
+| `BASAL_TOKEN_BUDGET` | `fast` / `fp8`: most padded tokens per forward (engine default 12288) |
+| `BASAL_GRAPH_LEN` | `fast` / `fp8`: longest CUDA graph in tokens (default 8192; longer prompts run without a graph) |
+| `BASAL_TREE_ROWS` | `fast` / `fp8`: most branched requests per pass-2 graph (default 8) |
 | `PORT` | listen port (default 8000) |
 | `HF_TOKEN` | for gated repos |
 

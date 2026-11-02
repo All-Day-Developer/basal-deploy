@@ -162,7 +162,7 @@ jobs:
   build:
     needs: [plan, runner]
     if: needs.plan.outputs.image_count != '0'
-    name: ${{ matrix.name }} (${{ matrix.variant }})
+    name: ${{ matrix.name }} (${{ matrix.variants }})
     runs-on: ${{ fromJSON(matrix.runner) }}
     timeout-minutes: 360
     permissions:
@@ -189,20 +189,18 @@ jobs:
       - name: Compute tags
         id: tags
         env:
-          VARIANT: ${{ matrix.variant }}
           SHA: ${{ github.sha }}
           EVENT: ${{ github.event_name }}
           PR: ${{ github.event.pull_request.number }}
         run: |
           short=${SHA::7}
           if [ "$EVENT" = "pull_request" ]; then
-            tags="$IMAGE:$VARIANT-pr-$PR"
-          elif [ "$VARIANT" = "online" ]; then
-            tags="$IMAGE:latest,$IMAGE:online,$IMAGE:online-sha-$short"
+            echo "online=$IMAGE:online-pr-$PR" >> "$GITHUB_OUTPUT"
+            echo "offline=$IMAGE:offline-pr-$PR" >> "$GITHUB_OUTPUT"
           else
-            tags="$IMAGE:offline,$IMAGE:offline-sha-$short"
+            echo "online=$IMAGE:latest,$IMAGE:online,$IMAGE:online-sha-$short" >> "$GITHUB_OUTPUT"
+            echo "offline=$IMAGE:offline,$IMAGE:offline-sha-$short" >> "$GITHUB_OUTPUT"
           fi
-          echo "tags=$tags" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v4
 
@@ -213,17 +211,44 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/build-push-action@v7
+      - name: Build online
+        if: matrix.online
+        uses: docker/build-push-action@v7
         with:
           context: .
           target: ${{ matrix.target }}
           platforms: ${{ matrix.platforms }}
           push: ${{ env.PUSH == 'true' }}
-          tags: ${{ steps.tags.outputs.tags }}
+          tags: ${{ steps.tags.outputs.online }}
           build-args: |
             ENGINE_IMAGE=${{ matrix.base_image }}
             LLAMACPP_IMAGE=${{ matrix.base_image }}
-            VARIANT=${{ matrix.variant }}
+            VARIANT=online
+            MODEL=${{ matrix.model }}
+            MODE=${{ matrix.mode }}
+            REVISION=${{ matrix.revision }}
+            GGUF_FILE=${{ matrix.gguf_file }}
+            CONTEXT=${{ matrix.context }}
+            SERVE_ARGS=${{ matrix.serve_args }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.description=${{ matrix.model }} (basal-serve --mode ${{ matrix.mode }}, online)
+          cache-from: type=gha,scope=runner-${{ matrix.runtime }}
+
+      - name: Build offline
+        if: matrix.offline
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          platforms: ${{ matrix.platforms }}
+          push: ${{ env.PUSH == 'true' }}
+          tags: ${{ steps.tags.outputs.offline }}
+          build-args: |
+            ENGINE_IMAGE=${{ matrix.base_image }}
+            LLAMACPP_IMAGE=${{ matrix.base_image }}
+            VARIANT=offline
             MODEL=${{ matrix.model }}
             MODE=${{ matrix.mode }}
             REVISION=${{ matrix.revision }}
@@ -235,5 +260,5 @@ jobs:
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.description=${{ matrix.model }} (basal-serve --mode ${{ matrix.mode }}, ${{ matrix.variant }})
+            org.opencontainers.image.description=${{ matrix.model }} (basal-serve --mode ${{ matrix.mode }}, offline)
           cache-from: type=gha,scope=runner-${{ matrix.runtime }}

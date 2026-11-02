@@ -14,7 +14,7 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import config
+from . import config, launch
 
 MODEL_DIR = Path("/models/model")
 
@@ -34,27 +34,28 @@ def cmd_matrix(args: argparse.Namespace) -> int:
                 continue
         elif not image.enabled:
             continue
-        for variant in image.variants:
-            if args.variant != "all" and variant != args.variant:
-                continue
-            images.append(
-                {
-                    "name": image.name,
-                    "variant": variant,
-                    "model": image.model,
-                    "revision": image.revision,
-                    "mode": image.mode,
-                    "gguf_file": image.gguf_file or "",
-                    "context": image.context or "",
-                    "serve_args": shlex.join(image.serve_args),
-                    "runtime": image.runtime.name,
-                    "runner_target": f"{image.runtime.extra}-runner",
-                    "target": image.runtime.extra,
-                    "base_image": image.runtime.base_image,
-                    "platforms": ",".join(image.platforms),
-                    "runner": json.dumps(image.runner),
-                }
-            )
+        variants = [v for v in image.variants if args.variant in ("all", v)]
+        if not variants:
+            continue
+        images.append(
+            {
+                "name": image.name,
+                "variants": ",".join(variants),
+                **{v: v in variants for v in config.VARIANTS},
+                "model": image.model,
+                "revision": image.revision,
+                "mode": image.mode,
+                "gguf_file": image.gguf_file or "",
+                "context": image.context or "",
+                "serve_args": shlex.join(image.serve_args),
+                "runtime": image.runtime.name,
+                "runner_target": f"{image.runtime.extra}-runner",
+                "target": image.runtime.extra,
+                "base_image": image.runtime.base_image,
+                "platforms": ",".join(image.platforms),
+                "runner": json.dumps(image.runner),
+            }
+        )
 
     used = {row["runtime"] for row in images}
     runners = [
@@ -241,8 +242,11 @@ def cmd_serve(extra: list[str]) -> int:
         os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
     p = plan(extra)
     if p.llama is None:
-        print("exec:", shlex.join(p.serve), flush=True)
-        os.execv(p.serve[0], p.serve)
+        argv = p.serve
+        if launch.wanted(os.environ):
+            argv = [sys.executable, "-m", "basal_images.launch", *p.serve[1:]]
+        print("exec:", shlex.join(argv), flush=True)
+        os.execv(argv[0], argv)
         return 0
     return _supervise(p)
 
